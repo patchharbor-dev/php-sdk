@@ -120,6 +120,59 @@ $transport = new HttpTransport('http://localhost:8000', listen: true);
 - A server without a listening stream answers `405`, and the connection carries on without one.
 - On `2026-07-28`, which has no standalone stream, the option does nothing.
 
+### Discovering tools on a hosted server
+
+Some hosted servers expose tools without exposing prompts. Check the negotiated capabilities
+before asking for tools, and use a tool name from the server's response. This example lists the
+tools on the public [Chain.Love MCP gateway](https://github.com/Chain-Love/chain.love-mcp) and calls
+its read-only `discover_networks` tool to retrieve supported network keys. This call needs no credentials.
+
+Install `mcp/sdk`, `symfony/http-client` and `nyholm/psr7` with Composer. Run the example from your
+project directory.
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+use Mcp\Client;
+use Mcp\Client\Transport\HttpTransport;
+use Mcp\Exception\RequestException;
+use Mcp\Schema\Content\TextContent;
+use Symfony\Component\HttpClient\HttpClient;
+use Symfony\Component\HttpClient\Psr18Client;
+
+$http = new Psr18Client(HttpClient::create(['timeout' => 10]));
+$client = Client::builder()->setInitTimeout(10)->setRequestTimeout(10)->build();
+$client->connect(new HttpTransport('https://app.chain.love/mcp', httpClient: $http));
+
+try {
+    if (null === $client->getServerCapabilities()?->tools) {
+        throw new RequestException('This server does not advertise tools.');
+    }
+
+    $toolNames = array_column($client->listTools()->tools, 'name');
+    echo implode("\n", $toolNames)."\n";
+
+    if (!\in_array('discover_networks', $toolNames, true)) {
+        throw new RequestException('Network discovery is unavailable.');
+    }
+
+    $result = $client->callTool('discover_networks');
+    if ($result->isError) {
+        throw new RequestException('Network discovery failed.');
+    }
+
+    foreach ($result->content as $content) {
+        if ($content instanceof TextContent) {
+            echo $content->text."\n";
+        }
+    }
+} finally {
+    $client->disconnect();
+}
+```
+
 ## Cancellation and deadlines
 
 `callTool()` accepts optional `cancellation: ?CancellationTokenInterface` and
